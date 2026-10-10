@@ -9,6 +9,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The core assistant: it answers from a file of reviewed entries, the model returns the
+  entries behind each reply, and a reply whose citations do not hold is replaced by a fixed
+  fallback message. Claude is the first supported model, through Anthropic's API.
 - Project scaffolding: packaging with uv, linting and formatting with Ruff, strict type
   checking with mypy, tests with pytest and continuous integration on GitHub Actions.
 
