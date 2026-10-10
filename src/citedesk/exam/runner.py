@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections import Counter
 from dataclasses import dataclass, field
+from functools import partial
 from typing import TYPE_CHECKING, Any, Literal
 
 from citedesk.exam.grading import CRITICAL, grade
 from citedesk.exam.judge import build_judge_instructions, render_exchange
+from citedesk.exam.pacing import first_then_rest
 from citedesk.model import Turn, Usage
 
 if TYPE_CHECKING:
@@ -191,24 +192,15 @@ class Exam:
             pass_mark: The share of graded runs that has to pass.
             on_run: Called with each run as it finishes, to show progress.
         """
-        pending = [(case, number) for case in cases for number in range(1, runs + 1)]
-        if not pending:
-            return Report((), pass_mark)
-        limit = asyncio.Semaphore(self._concurrency)
 
         async def one(case: Case, number: int) -> Run:
-            async with limit:
-                run = await self._run(case, number)
+            run = await self._run(case, number)
             if on_run:
                 on_run(run)
             return run
 
-        # The first run goes alone: the provider caches the instructions once the first
-        # response begins, and runs sent before that would each pay for writing them.
-        first = await one(*pending[0])
-        async with asyncio.TaskGroup() as group:
-            rest = [group.create_task(one(case, number)) for case, number in pending[1:]]
-        return Report((first, *(task.result() for task in rest)), pass_mark)
+        jobs = [partial(one, case, number) for case in cases for number in range(1, runs + 1)]
+        return Report(tuple(await first_then_rest(jobs, self._concurrency)), pass_mark)
 
     async def _run(self, case: Case, number: int) -> Run:
         """Put one case once and grade the reply."""

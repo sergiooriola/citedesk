@@ -32,9 +32,13 @@ reply. A plain yes or no to the person's question is a claim.
 claim only if it says the same thing, in whatever words or language, or the claim follows \
 from it without any outside knowledge. What is merely plausible, usual in similar \
 organisations or consistent with the entries is not supported: leave its list empty. A \
-denial, such as "there is no", "it does not" or "it is not allowed", is supported only if \
-an entry makes it or it follows necessarily from one: that the entries do not mention \
-something does not support denying it.
+claim that applies an entry to the person's own case is supported by that entry when the \
+case falls within what the entry says: an entry about pupils aged 4 to 16 covers a \
+seven-year-old, and one about competitive sport covers the sport the person names. It is \
+not supported when the case falls outside the entry or stretches it to something the entry \
+does not cover. A denial, such as "there is no", "it does not" or "it is not allowed", is \
+supported only if an entry makes it or it follows necessarily from one: that the entries do \
+not mention something does not support denying it.
 3. Say which language the reply is written in.
 
 The assistant works under one arrangement that needs no entry: whatever it does not answer \

@@ -1,4 +1,4 @@
-"""The command line: ask a deployment one question, or put it through its exam."""
+"""The command line: ask a deployment a question, examine it, or measure the exam's judge."""
 
 from __future__ import annotations
 
@@ -11,15 +11,14 @@ from typing import TYPE_CHECKING, get_args
 
 from citedesk.anthropic_model import AnthropicJudge, AnthropicModel
 from citedesk.deployment import Deployment, DeploymentError
-from citedesk.exam import Exam, ExamError, load_cases
+from citedesk.exam import Exam, ExamError, calibrate, load_cases, load_samples
 from citedesk.knowledge import KnowledgeError
-from citedesk.model import Effort, Turn
+from citedesk.model import Effort, Turn, Usage
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from citedesk.exam import Report, Run
-    from citedesk.model import Usage
 
 _EXIT = {"passed": 0, "failed": 1, "incomplete": 2}
 
@@ -28,7 +27,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line and return its exit status.
 
     `exam` returns 0 when the exam is passed, 1 when it is failed and 2 when it has to be
-    repeated or its files cannot be used.
+    repeated or its files cannot be used. `calibrate` returns 0 when the judge got every
+    reading right, 1 when it did not and 2 when a call failed.
     """
     args = _parser().parse_args(argv)
     try:
@@ -59,13 +59,28 @@ def _parser() -> argparse.ArgumentParser:
         default=0.95,
         help="share of graded runs that has to pass (default: 0.95)",
     )
-    exam.add_argument("--concurrency", type=int, default=4, help="cases in flight (default: 4)")
     exam.add_argument("--report", type=Path, help="write the full report to this JSON file")
     _model_options(exam)
-    exam.add_argument("--judge-model", default="claude-sonnet-5-5")
-    exam.add_argument("--judge-effort", choices=get_args(Effort), default="low")
+    _judge_options(exam)
     exam.set_defaults(run=_exam)
+
+    calibrate = commands.add_parser(
+        "calibrate", help="measure the judge against replies with known faults"
+    )
+    calibrate.add_argument("deployment", type=Path, help="the deployment file")
+    calibrate.add_argument("samples", type=Path, help="the samples file")
+    calibrate.add_argument(
+        "--readings", type=int, default=3, help="times each sample is read (default: 3)"
+    )
+    _judge_options(calibrate)
+    calibrate.set_defaults(run=_calibrate)
     return parser
+
+
+def _judge_options(command: argparse.ArgumentParser) -> None:
+    command.add_argument("--concurrency", type=int, default=4, help="calls in flight (default: 4)")
+    command.add_argument("--judge-model", default="claude-sonnet-5-5")
+    command.add_argument("--judge-effort", choices=get_args(Effort), default="low")
 
 
 def _model_options(command: argparse.ArgumentParser) -> None:
@@ -118,6 +133,35 @@ async def _exam(args: argparse.Namespace) -> int:
         content = json.dumps(settings | report.to_dict(), ensure_ascii=False, indent=2)
         args.report.write_text(content + "\n", encoding="utf-8")
     return _EXIT[report.verdict]
+
+
+async def _calibrate(args: argparse.Namespace) -> int:
+    deployment = Deployment.from_file(args.deployment)
+    samples = load_samples(args.samples)
+    judge = AnthropicJudge(model=args.judge_model, effort=args.judge_effort)
+    print(
+        f"{len(samples)} samples x {args.readings} readings. "
+        f"Judge: {args.judge_model}, effort {args.judge_effort}."
+    )
+    readings = await calibrate(
+        samples,
+        deployment=deployment,
+        judge=judge,
+        readings=args.readings,
+        concurrency=args.concurrency,
+    )
+    for reading in readings:
+        if reading.judgement is None:
+            print(f"{reading.sample.id} reading {reading.number}: the judge call failed")
+        for mistake in reading.mistakes:
+            print(f"{reading.sample.id} reading {reading.number}: {mistake}")
+    right = sum(reading.right for reading in readings)
+    usage = sum((reading.usage for reading in readings), Usage())
+    print(f"right     {right} of {len(readings)}")
+    print(f"tokens    {_tokens(usage)}")
+    if any(reading.judgement is None for reading in readings):
+        return 2
+    return 0 if right == len(readings) else 1
 
 
 def _progress(run: Run) -> None:

@@ -9,6 +9,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Judge calibration: `citedesk calibrate` has the judge read replies with known faults and
+  reports every invented fact it missed and every false alarm it raised. The example
+  deployment has 27 samples.
 - The exam: `citedesk exam` puts every case of a cases file to the assistant several times,
   grades each reply by rule and with a second model that checks it claim by claim against
   the entries, and passes only with no forbidden or invented content and a pass rate over
@@ -25,6 +28,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The judge accepts a claim that applies an entry to the person's own case when the case
+  falls within what the entry says, and still rejects one that stretches the entry.
 - The model now states the language of the person's message before it writes, and
   `Reply.language` carries it. With the entries in one language, a small model otherwise
   tends to reply in that language whatever the person wrote in.

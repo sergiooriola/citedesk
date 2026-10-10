@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Literal, get_args
 if TYPE_CHECKING:
     from citedesk.assistant import Reply
     from citedesk.exam.cases import Case
-    from citedesk.exam.judge import Judgement
+    from citedesk.exam.judge import Claim, Judgement
     from citedesk.knowledge import Knowledge
 
 Failure = Literal[
@@ -64,14 +64,23 @@ def grade(
     if judgement is not None:
         for claim in judgement.claims:
             stated_by = {entry_id for entry_id in claim.entry_ids if entry_id in knowledge}
-            if not stated_by:
-                found.add("unsupported_claim")
-            elif stated_by.isdisjoint(reply.entry_ids):
+            if stated_by and stated_by.isdisjoint(reply.entry_ids):
                 found.add("uncited_claim")
+        if unsupported_claims(judgement, knowledge):
+            found.add("unsupported_claim")
         if case.language and judgement.language.strip().casefold() != case.language.casefold():
             found.add("wrong_language")
 
     return tuple(failure for failure in _BY_SEVERITY if failure in found)
+
+
+def unsupported_claims(judgement: Judgement, knowledge: Knowledge) -> list[Claim]:
+    """Pick the claims no entry states. An entry the judge made up states nothing."""
+    return [
+        claim
+        for claim in judgement.claims
+        if not any(entry_id in knowledge for entry_id in claim.entry_ids)
+    ]
 
 
 def _appears(phrase: str, text: str) -> bool:
