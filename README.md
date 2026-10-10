@@ -38,10 +38,47 @@ and a narrow job, not for open-ended chat.
   analytics go through small adapters, so the assistant uses the organisation's existing
   systems instead of replacing them.
 
+## How it works today
+
+```python
+import asyncio
+from pathlib import Path
+
+from citedesk import Assistant, Knowledge, Turn
+from citedesk.anthropic_model import AnthropicModel
+
+assistant = Assistant(
+    model=AnthropicModel(),  # reads ANTHROPIC_API_KEY
+    knowledge=Knowledge.from_jsonl(Path("examples/riverside-academy.jsonl")),
+    office_entry_ids=["OFFICE-01"],
+    fallback="I can't answer that here. Please call the office on 01234 567890.",
+    rules=["Fees are reserved for the office: never state an amount."],
+)
+
+reply = asyncio.run(assistant.reply([Turn("user", "What time does school start?")]))
+print(reply.kind, reply.entry_ids, reply.text)
+# answer ('DAY-01',) Lessons run from 8:45 to 15:30, Monday to Friday...
+```
+
+The model has to return its text together with the identifiers of the entries it used. The
+assistant sends that text only if every identifier exists and, for a hand-off, at least one
+is an office entry. Anything else — an answer with no entry, an unknown identifier, a
+refusal, a reply cut short, an API error — is replaced by the deployment's fixed `fallback`
+message, and `reply.rejection` says why.
+
+That check proves a reply points at real entries, not that it is faithful to them. Showing
+that is the job of the exam runner, which is next on the roadmap.
+
+`examples/ask.py` runs one question against an invented school:
+
+```sh
+uv run --env-file .env python examples/ask.py "Is there a uniform?"
+```
+
 ## Roadmap
 
 - [x] Project scaffolding: packaging, linting, typing, tests and continuous integration
-- [ ] Core: answer from a knowledge file with cited entries, or hand off
+- [x] Core: answer from a knowledge file with cited entries, or hand off
 - [ ] Exam runner: cases, repeated runs and a pass mark
 - [ ] HTTP service with rate limits and a daily budget
 - [ ] Web chat widget
