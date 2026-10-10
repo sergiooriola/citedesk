@@ -42,7 +42,7 @@ and a narrow job, not for open-ended chat.
 
 A deployment is one JSON file: where the entries are, which of them say how to reach the
 office, the fixed message for when a reply cannot be trusted, the organisation's own rules,
-and the model and effort it runs with. [`examples/riverside-academy`](examples/riverside-academy)
+the model and effort it runs with, and the limits of [its service](#the-service). [`examples/riverside-academy`](examples/riverside-academy)
 has one for an invented school.
 
 ```python
@@ -151,13 +151,66 @@ Passing its own cases does not prove an assistant: instructions tuned against a 
 cases fit that set. Keep adding the questions real people ask, and re-run the exam whenever
 the entries, the rules or the model change.
 
+## The service
+
+`citedesk serve` puts a deployment's assistant behind an HTTP interface. It is meant to be
+called by the organisation's own web server, never straight from a browser:
+
+```sh
+CITEDESK_SERVICE_KEY=... uv run --env-file .env citedesk serve examples/riverside-academy/deployment.json
+```
+
+```sh
+curl http://127.0.0.1:8000/v1/replies \
+  -H "Authorization: Bearer $CITEDESK_SERVICE_KEY" -H "Content-Type: application/json" \
+  -d '{"client": "a1b2", "turns": [{"role": "user", "text": "What time does school start?"}]}'
+# {"kind":"answer","text":"Lessons run from 8:45 to 15:30, Monday to Friday. The gates open at 8:15.",
+#  "entry_ids":["DAY-01"],"language":"en","reason":null}
+```
+
+The service keeps no conversations: the caller sends the whole one each time, ending with
+the person's message. `client` is any value that tells one visitor from another, such as a
+hash of their address; requests are rate-limited by it.
+
+What stands between the public and the bill is in the deployment file:
+
+```json
+"limits": {
+  "message_chars": 600,
+  "turns": 20,
+  "client_requests_per_minute": 6,
+  "requests_per_minute": 60,
+  "daily_budget_usd": 1.0
+},
+"prices": {"input": 0.10, "output": 0.50, "cache_read": 0.01, "cache_write": 0.125}
+```
+
+| Situation | Response |
+| --- | --- |
+| No key, or a wrong one | `401` |
+| A message or a conversation over the limits, or turns out of order | `422` with a `code` |
+| A client over its allowance, or all clients over theirs | `429` with `Retry-After` |
+| The day's budget is spent | `200` with the fallback and `"reason": "budget_spent"` |
+| The model's draft cannot be trusted, or the model fails | `200` with the fallback and the reason |
+
+Every reply's cost is worked out from its token usage at the deployment's `prices`, in US
+dollars per million tokens, and added to the day's total. Once the total reaches
+`daily_budget_usd`, the model is not called again until the next UTC day: abuse can switch
+the assistant off for a day, not run up a bill. The limits live in memory, so the service
+runs as a single process, and the provider's own spend limit stays as the backstop.
+
+The log has one line per reply with its kind, its cost and how long it took, and never the
+text of a message.
+
+`GET /healthz` answers without a key, for whatever watches the service.
+
 ## Roadmap
 
 - [x] Project scaffolding: packaging, linting, typing, tests and continuous integration
 - [x] Core: answer from a knowledge file with cited entries, or hand off
 - [x] Exam runner: cases, repeated runs, a judge and a pass mark
 - [x] Judge calibration as a command, with its samples in the repository
-- [ ] HTTP service with rate limits and a daily budget
+- [x] HTTP service with rate limits and a daily budget
 - [ ] Web chat widget
 - [ ] Adapters: lead creation, staff sign-in, analytics
 - [ ] Conversation records, cost per conversation and retention

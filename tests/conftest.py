@@ -3,7 +3,7 @@ from collections.abc import Sequence
 import pytest
 
 from citedesk import Entry, Generation, Knowledge, Turn
-from citedesk.deployment import Deployment
+from citedesk.deployment import Deployment, Limits, Prices
 from citedesk.exam import Judging
 
 
@@ -56,4 +56,8 @@ def deployment(knowledge: Knowledge) -> Deployment:
         office_entry_ids=("OFFICE-01",),
         fallback="The office can help: call 555 0100.",
         rules=("Fees are reserved for the office.",),
+        limits=Limits(
+            message_chars=40, turns=3, client_requests_per_minute=2, requests_per_minute=3
+        ),
+        prices=Prices(input=1.0, output=10.0, cache_read=0.1, cache_write=1.25),
     )

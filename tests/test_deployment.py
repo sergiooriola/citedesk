@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from citedesk import Generation, KnowledgeError, Turn
-from citedesk.deployment import Deployment, DeploymentError
+from citedesk import Generation, KnowledgeError, Turn, Usage
+from citedesk.deployment import Deployment, DeploymentError, Limits, Prices
 
 from .conftest import ScriptedModel
 
@@ -38,6 +38,42 @@ def test_a_file_becomes_a_deployment_with_its_entries(tmp_path: Path) -> None:
     assert (deployment.model, deployment.effort) == ("claude-haiku-5-5", "low")
 
 
+def test_a_deployment_has_limits_by_default_and_no_prices(tmp_path: Path) -> None:
+    deployment = Deployment.from_file(write(tmp_path))
+
+    assert deployment.limits == Limits(
+        message_chars=600,
+        turns=20,
+        client_requests_per_minute=6,
+        requests_per_minute=60,
+        daily_budget_usd=1.0,
+    )
+    assert deployment.prices is None
+
+
+def test_a_deployment_can_set_its_limits_and_prices(tmp_path: Path) -> None:
+    prices = {"input": 0.1, "output": 0.5, "cache_read": 0.01, "cache_write": 0.125}
+    path = write(tmp_path, limits={"daily_budget_usd": 0.5, "turns": 8}, prices=prices)
+
+    deployment = Deployment.from_file(path)
+
+    assert (deployment.limits.daily_budget_usd, deployment.limits.turns) == (0.5, 8)
+    assert deployment.limits.message_chars == 600
+    assert deployment.prices == Prices(**prices)
+
+
+def test_prices_turn_usage_into_dollars() -> None:
+    prices = Prices(input=0.1, output=0.5, cache_read=0.01, cache_write=0.125)
+    usage = Usage(
+        input_tokens=1_000_000,
+        output_tokens=2_000_000,
+        cache_read_tokens=10_000_000,
+        cache_write_tokens=4_000_000,
+    )
+
+    assert prices.cost(usage) == pytest.approx(0.1 + 1.0 + 0.1 + 0.5)
+
+
 def test_a_deployment_can_set_its_model_and_effort(tmp_path: Path) -> None:
     deployment = Deployment.from_file(write(tmp_path, model="a-model", effort="medium"))
 
@@ -60,6 +96,9 @@ def test_the_entries_file_is_found_next_to_the_deployment_file(
         {"fallback": " "},
         {"knowledge": ""},
         {"effort": "extreme"},
+        {"limits": {"turns": 0}},
+        {"limits": {"daily_budget_usd": -1}},
+        {"prices": {"input": 0.1}},
         {"unexpected": True},
     ],
 )

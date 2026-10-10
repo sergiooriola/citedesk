@@ -1,19 +1,25 @@
-"""The command line: ask a deployment a question, examine it, or measure the exam's judge."""
+"""The command line: ask a deployment, examine it, serve it, or measure the exam's judge."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
 import json
+import logging
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, get_args
+
+import anthropic
+import uvicorn
 
 from citedesk.anthropic_model import AnthropicJudge, AnthropicModel
 from citedesk.deployment import Deployment, DeploymentError
 from citedesk.exam import Exam, ExamError, calibrate, load_cases, load_samples
 from citedesk.knowledge import KnowledgeError
 from citedesk.model import Effort, Turn, Usage
+from citedesk.service import create_app
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -21,6 +27,11 @@ if TYPE_CHECKING:
     from citedesk.exam import Report, Run
 
 _EXIT = {"passed": 0, "failed": 1, "incomplete": 2}
+
+# The environment variable with the secret callers of the service have to present.
+SERVICE_KEY = "CITEDESK_SERVICE_KEY"
+_SHORTEST_KEY = 32
+_REPLY_TIMEOUT = 30.0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -63,6 +74,12 @@ def _parser() -> argparse.ArgumentParser:
     _model_options(exam)
     _judge_options(exam)
     exam.set_defaults(run=_exam)
+
+    serve = commands.add_parser("serve", help="serve a deployment over HTTP")
+    serve.add_argument("deployment", type=Path, help="the deployment file")
+    serve.add_argument("--host", default="127.0.0.1", help="address to listen on")
+    serve.add_argument("--port", type=int, default=8000, help="port to listen on")
+    serve.set_defaults(run=_serve)
 
     calibrate = commands.add_parser(
         "calibrate", help="measure the judge against replies with known faults"
@@ -133,6 +150,27 @@ async def _exam(args: argparse.Namespace) -> int:
         content = json.dumps(settings | report.to_dict(), ensure_ascii=False, indent=2)
         args.report.write_text(content + "\n", encoding="utf-8")
     return _EXIT[report.verdict]
+
+
+async def _serve(args: argparse.Namespace) -> int:
+    deployment = Deployment.from_file(args.deployment)
+    key = os.environ.get(SERVICE_KEY, "")
+    if len(key) < _SHORTEST_KEY:
+        print(
+            f"citedesk: set {SERVICE_KEY} to a secret of at least {_SHORTEST_KEY} characters: "
+            "callers present it as a bearer token.",
+            file=sys.stderr,
+        )
+        return 2
+    # A person is waiting for each reply: better the fallback than a long wait or a second
+    # long attempt.
+    client = anthropic.AsyncAnthropic(timeout=_REPLY_TIMEOUT, max_retries=1)
+    model = AnthropicModel(client, model=deployment.model, effort=deployment.effort)
+    app = create_app(deployment, model, key=key)
+    # Uvicorn sets up only its own loggers; this shows the service's line for each reply.
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(message)s")
+    await uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port)).serve()
+    return 0
 
 
 async def _calibrate(args: argparse.Namespace) -> int:

@@ -9,6 +9,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The service: `citedesk serve` puts a deployment behind an HTTP interface with a key, a
+  rate limit for each client and for all of them, bounds on messages and conversations, and
+  a daily budget in dollars after which every reply is the fallback. The limits and the
+  model's prices are part of the deployment file.
 - Judge calibration: `citedesk calibrate` has the judge read replies with known faults and
   reports every invented fact it missed and every false alarm it raised. The example
   deployment has 27 samples.
