@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated, Self
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from citedesk.assistant import Assistant
 from citedesk.knowledge import Knowledge
@@ -62,6 +62,36 @@ class Prices(BaseModel):
         ) / 1_000_000
 
 
+class Access(BaseModel):
+    """Who may use the deployment's service, when it is not open to everyone.
+
+    Attributes:
+        issuer: The identity provider the people sign in with, as it names itself in the
+            `iss` claim of its tokens.
+        jwks_url: Where the provider publishes the public keys its tokens are signed with.
+        audience: The `aud` claim a token has to carry. Not checked when absent.
+        emails: The people let through, by the `email` claim of their token. Only for a
+            provider that puts an address there once its owner has confirmed it.
+        subjects: The people let through, by the `sub` claim of their token: the
+            provider's own identifier of the person, which never changes.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    issuer: str = Field(min_length=1)
+    jwks_url: str = Field(pattern=r"^https://")
+    audience: str | None = Field(default=None, min_length=1)
+    emails: tuple[Annotated[str, Field(min_length=3)], ...] = ()
+    subjects: tuple[Annotated[str, Field(min_length=1)], ...] = ()
+
+    @model_validator(mode="after")
+    def _someone_is_listed(self) -> Self:
+        if not self.emails and not self.subjects:
+            message = "An access list with nobody on it lets nobody through."
+            raise ValueError(message)
+        return self
+
+
 class _File(BaseModel):
     """The deployment file as it is written."""
 
@@ -75,6 +105,7 @@ class _File(BaseModel):
     effort: Effort = "low"
     limits: Limits = Limits()
     prices: Prices | None = None
+    access: Access | None = None
 
 
 @dataclass(frozen=True)
@@ -92,14 +123,16 @@ class Deployment:
     effort: Effort = "low"
     limits: Limits = field(default_factory=Limits)
     prices: Prices | None = None
+    access: Access | None = None
 
     @classmethod
     def from_file(cls, path: Path) -> Deployment:
         """Read a deployment from a JSON file.
 
         The file has `knowledge` (the path of the entries file, relative to this one),
-        `office_entry_ids`, `fallback` and, optionally, `rules`, `model`, `effort`, `limits`
-        and `prices`. The service needs the prices: without them it cannot keep to a budget.
+        `office_entry_ids`, `fallback` and, optionally, `rules`, `model`, `effort`, `limits`,
+        `prices` and `access`. The service needs the prices: without them it cannot keep to
+        a budget. Without `access` it replies to whoever reaches it.
 
         Raises:
             DeploymentError: If the file is not a valid deployment.
@@ -119,6 +152,7 @@ class Deployment:
             file.effort,
             file.limits,
             file.prices,
+            file.access,
         )
 
     def assistant(self, model: Model) -> Assistant:

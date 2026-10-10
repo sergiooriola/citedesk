@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
@@ -63,6 +64,14 @@ class RateLimiter:
 def utc_today() -> date:
     """Return the current day in UTC."""
     return datetime.now(UTC).date()
+
+
+@dataclass(frozen=True)
+class Clocks:
+    """Where the limits read the time from. Tests replace them to move time by hand."""
+
+    seconds: Callable[[], float] = time.monotonic
+    today: Callable[[], date] = utc_today
 
 
 class DailyBudget:
