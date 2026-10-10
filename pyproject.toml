@@ -1,0 +1,108 @@
+[project]
+name = "citedesk"
+version = "0.1.0.dev0"
+description = "An assistant engine that answers only from approved entries, cites the entry behind every answer and hands everything else to a person."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Sergio Oriola" }]
+requires-python = ">=3.13"
+keywords = ["assistant", "chatbot", "citations", "grounding", "llm", "evals"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/sergiooriola/citedesk"
+Issues = "https://github.com/sergiooriola/citedesk/issues"
+Changelog = "https://github.com/sergiooriola/citedesk/blob/main/CHANGELOG.md"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4",
+    "pre-commit>=4.6",
+    "pytest>=9.1",
+    "pytest-cov>=7.1",
+    "ruff>=0.16.10",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.22,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+required-version = ">=0.12.22"
+# A release has to be a week old before it can be locked: most malicious uploads are caught sooner.
+exclude-newer = "1 week"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "A",     # shadowed builtins
+    "ANN",   # type annotations
+    "ARG",   # unused arguments
+    "ASYNC", # async pitfalls
+    "B",     # likely bugs
+    "C4",    # comprehensions
+    "D",     # docstrings
+    "DTZ",   # naive datetimes
+    "E",     # pycodestyle errors
+    "EM",    # error messages
+    "ERA",   # commented-out code
+    "F",     # pyflakes
+    "FAST",  # FastAPI
+    "FURB",  # modernisation
+    "G",     # logging format
+    "I",     # import order
+    "LOG",   # logging
+    "N",     # naming
+    "PERF",  # performance
+    "PIE",   # misc. lints
+    "PL",    # pylint
+    "PT",    # pytest style
+    "PTH",   # pathlib
+    "RET",   # return statements
+    "RUF",   # ruff's own rules
+    "S",     # security (bandit)
+    "SIM",   # simplifications
+    "T20",   # print statements
+    "TC",    # type-checking imports
+    "TID",   # tidy imports
+    "UP",    # pyupgrade
+    "W",     # pycodestyle warnings
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert, use literal values and are named after what they check.
+"tests/**" = ["D", "PLR2004", "S101"]
+
+[tool.mypy]
+strict = true
+warn_unreachable = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-config", "--strict-markers", "-ra"]
+xfail_strict = true
+
+[tool.coverage.run]
+source = ["citedesk"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
