@@ -22,7 +22,8 @@ def reply_to(knowledge: Knowledge, generation: Generation) -> Reply:
 
 
 def completed(action: str, text: str, entry_ids: list[str]) -> Generation:
-    draft = Draft.model_validate({"action": action, "text": text, "entry_ids": entry_ids})
+    fields = {"language": " EN ", "action": action, "text": text, "entry_ids": entry_ids}
+    draft = Draft.model_validate(fields)
     return Generation("completed", draft, Usage(input_tokens=10, output_tokens=5))
 
 
@@ -30,7 +31,11 @@ def test_an_answer_that_cites_its_entries_is_sent(knowledge: Knowledge) -> None:
     reply = reply_to(knowledge, completed("answer", " From 8:45 to 15:30. ", ["DAY-01"]))
 
     assert reply == Reply(
-        "answer", "From 8:45 to 15:30.", ("DAY-01",), usage=Usage(input_tokens=10, output_tokens=5)
+        "answer",
+        "From 8:45 to 15:30.",
+        ("DAY-01",),
+        usage=Usage(input_tokens=10, output_tokens=5),
+        language="en",
     )
 
 
@@ -98,3 +103,9 @@ def test_office_entries_have_to_exist(knowledge: Knowledge, office_entry_ids: li
             office_entry_ids=office_entry_ids,
             fallback=FALLBACK,
         )
+
+
+def test_usage_adds_up() -> None:
+    total = Usage(1, 2, 3, 4) + Usage(10, 20, 30, 40)
+
+    assert total == Usage(11, 22, 33, 44)

@@ -1,11 +1,14 @@
-"""Claude, through Anthropic's API, as the assistant's model."""
+"""Claude, through Anthropic's API, as the assistant's model and as the exam's judge."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import anthropic
+from pydantic import BaseModel
 
+from citedesk.exam.judge import Judgement, Judging
 from citedesk.model import Draft, Generation, Usage
 
 if TYPE_CHECKING:
@@ -13,11 +16,57 @@ if TYPE_CHECKING:
 
     from anthropic.types import MessageParam, TextBlockParam
 
-    from citedesk.model import Outcome, Turn
-
-Effort = Literal["low", "medium", "high", "xhigh", "max"]
+    from citedesk.model import Effort, Outcome, Turn
 
 _OUTCOMES: dict[str, Outcome] = {"refusal": "refused", "max_tokens": "truncated"}
+
+
+@dataclass(frozen=True)
+class _Claude:
+    """One Claude model asked for output in a fixed shape."""
+
+    client: anthropic.AsyncAnthropic
+    model: str
+    effort: Effort
+    max_output_tokens: int
+
+    async def parse[Shape: BaseModel](
+        self, instructions: str, messages: list[MessageParam], shape: type[Shape]
+    ) -> tuple[Outcome, Shape | None, Usage]:
+        """Send one request and return how it ended, the parsed output and the usage.
+
+        The instructions are marked for caching: they are the same for every request of a
+        deployment, and a cached read costs a fraction of a fresh one.
+        """
+        system: list[TextBlockParam] = [
+            {"type": "text", "text": instructions, "cache_control": {"type": "ephemeral"}}
+        ]
+        try:
+            response = await self.client.messages.parse(
+                model=self.model,
+                max_tokens=self.max_output_tokens,
+                system=system,
+                messages=messages,
+                output_format=shape,
+                output_config={"effort": self.effort},
+            )
+        except anthropic.APIError:
+            # Rate limits, spend limits, outages and bad requests all end the same way for
+            # the caller. The SDK has already retried what can be retried.
+            return "failed", None, Usage()
+
+        usage = Usage(
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            cache_read_tokens=response.usage.cache_read_input_tokens or 0,
+            cache_write_tokens=response.usage.cache_creation_input_tokens or 0,
+        )
+        outcome = _OUTCOMES.get(response.stop_reason or "", "completed")
+        if outcome != "completed":
+            return outcome, None, usage
+        if response.parsed_output is None:
+            return "failed", None, usage
+        return "completed", response.parsed_output, usage
 
 
 class AnthropicModel:
@@ -41,44 +90,43 @@ class AnthropicModel:
             max_output_tokens: The ceiling for one reply, reasoning included. A draft cut
                 short by it is rejected, never sent.
         """
-        self._client = client or anthropic.AsyncAnthropic()
-        self._model = model
-        self._effort: Effort = effort
-        self._max_output_tokens = max_output_tokens
+        self._claude = _Claude(
+            client or anthropic.AsyncAnthropic(), model, effort, max_output_tokens
+        )
 
     async def generate(self, *, instructions: str, turns: Sequence[Turn]) -> Generation:
-        """Ask Claude for a draft.
-
-        The instructions are marked for caching: they are the same for every conversation of
-        a deployment, and a cached read costs a tenth of a fresh one.
-        """
-        system: list[TextBlockParam] = [
-            {"type": "text", "text": instructions, "cache_control": {"type": "ephemeral"}}
-        ]
+        """Ask Claude for a draft."""
         messages: list[MessageParam] = [{"role": turn.role, "content": turn.text} for turn in turns]
-        try:
-            response = await self._client.messages.parse(
-                model=self._model,
-                max_tokens=self._max_output_tokens,
-                system=system,
-                messages=messages,
-                output_format=Draft,
-                output_config={"effort": self._effort},
-            )
-        except anthropic.APIError:
-            # Rate limits, spend limits, outages and bad requests all end the same way for
-            # the person: the fixed message. The SDK has already retried what can be retried.
-            return Generation("failed")
+        outcome, draft, usage = await self._claude.parse(instructions, messages, Draft)
+        return Generation(outcome, draft, usage)
 
-        usage = Usage(
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-            cache_read_tokens=response.usage.cache_read_input_tokens or 0,
-            cache_write_tokens=response.usage.cache_creation_input_tokens or 0,
+
+class AnthropicJudge:
+    """A Claude model that judges the replies of an exam."""
+
+    def __init__(
+        self,
+        client: anthropic.AsyncAnthropic | None = None,
+        *,
+        model: str = "claude-sonnet-5-5",
+        effort: Effort = "low",
+        max_output_tokens: int = 4096,
+    ) -> None:
+        """Choose the judge and how much it may spend on one judgement.
+
+        Args:
+            client: The API client. By default it reads the key from `ANTHROPIC_API_KEY`.
+            model: The model identifier. It should be a different model from the one under
+                examination, and at least as capable.
+            effort: How much the judge reasons before it answers.
+            max_output_tokens: The ceiling for one judgement, reasoning included.
+        """
+        self._claude = _Claude(
+            client or anthropic.AsyncAnthropic(), model, effort, max_output_tokens
         )
-        outcome = _OUTCOMES.get(response.stop_reason or "", "completed")
-        if outcome != "completed":
-            return Generation(outcome, usage=usage)
-        if response.parsed_output is None:
-            return Generation("failed", usage=usage)
-        return Generation("completed", response.parsed_output, usage)
+
+    async def judge(self, *, instructions: str, exchange: str) -> Judging:
+        """Ask Claude for the judgement of one exchange."""
+        messages: list[MessageParam] = [{"role": "user", "content": exchange}]
+        _, judgement, usage = await self._claude.parse(instructions, messages, Judgement)
+        return Judging(judgement, usage)

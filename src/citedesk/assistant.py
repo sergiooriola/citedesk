@@ -31,7 +31,8 @@ class Reply:
     """What the person receives.
 
     A "fallback" is the deployment's fixed message: it is sent whenever the model's draft
-    cannot be trusted, and `rejection` says why.
+    cannot be trusted, and `rejection` says why. `language` is the language the model read
+    the person's message in, absent for a fallback.
     """
 
     kind: Literal["answer", "hand_off", "fallback"]
@@ -39,6 +40,7 @@ class Reply:
     entry_ids: tuple[str, ...] = ()
     rejection: Rejection | None = None
     usage: Usage = field(default_factory=Usage)
+    language: str | None = None
 
 
 class Assistant:
@@ -92,7 +94,11 @@ class Assistant:
             return Reply("fallback", self._fallback, rejection=rejection, usage=generation.usage)
         draft = generation.draft
         return Reply(
-            draft.action, draft.text.strip(), tuple(draft.entry_ids), usage=generation.usage
+            draft.action,
+            draft.text.strip(),
+            tuple(draft.entry_ids),
+            usage=generation.usage,
+            language=draft.language.strip().lower(),
         )
 
     def _check(self, generation: Generation) -> Rejection | None:
