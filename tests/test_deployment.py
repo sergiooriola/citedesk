@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from citedesk import Generation, KnowledgeError, Turn, Usage
-from citedesk.deployment import Deployment, DeploymentError, Limits, Prices
+from citedesk.deployment import Access, Deployment, DeploymentError, Limits, Prices
 
 from .conftest import ScriptedModel
 
@@ -62,6 +62,23 @@ def test_a_deployment_can_set_its_limits_and_prices(tmp_path: Path) -> None:
     assert deployment.prices == Prices(**prices)
 
 
+def test_a_deployment_is_open_unless_it_lists_who_may_use_it(tmp_path: Path) -> None:
+    assert Deployment.from_file(write(tmp_path)).access is None
+
+    access = {
+        "issuer": "https://id.example",
+        "jwks_url": "https://id.example/keys",
+        "emails": ["staff@school.example"],
+    }
+    deployment = Deployment.from_file(write(tmp_path, access=access))
+
+    assert deployment.access == Access(
+        issuer="https://id.example",
+        jwks_url="https://id.example/keys",
+        emails=("staff@school.example",),
+    )
+
+
 def test_prices_turn_usage_into_dollars() -> None:
     prices = Prices(input=0.1, output=0.5, cache_read=0.01, cache_write=0.125)
     usage = Usage(
@@ -99,6 +116,8 @@ def test_the_entries_file_is_found_next_to_the_deployment_file(
         {"limits": {"turns": 0}},
         {"limits": {"daily_budget_usd": -1}},
         {"prices": {"input": 0.1}},
+        {"access": {"issuer": "https://id.example", "jwks_url": "https://id.example/keys"}},
+        {"access": {"issuer": "x", "jwks_url": "http://id.example/keys", "subjects": ["a"]}},
         {"unexpected": True},
     ],
 )

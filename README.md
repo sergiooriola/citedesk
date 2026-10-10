@@ -153,8 +153,8 @@ the entries, the rules or the model change.
 
 ## The service
 
-`citedesk serve` puts a deployment's assistant behind an HTTP interface. It is meant to be
-called by the organisation's own web server, never straight from a browser:
+`citedesk serve` puts a deployment's assistant behind an HTTP interface. It is meant to sit
+behind the organisation's own web server, never to be reached straight from a browser:
 
 ```sh
 CITEDESK_SERVICE_KEY=... uv run --env-file .env citedesk serve examples/riverside-academy/deployment.json
@@ -162,15 +162,48 @@ CITEDESK_SERVICE_KEY=... uv run --env-file .env citedesk serve examples/riversid
 
 ```sh
 curl http://127.0.0.1:8000/v1/replies \
-  -H "Authorization: Bearer $CITEDESK_SERVICE_KEY" -H "Content-Type: application/json" \
-  -d '{"client": "a1b2", "turns": [{"role": "user", "text": "What time does school start?"}]}'
+  -H "X-Citedesk-Key: $CITEDESK_SERVICE_KEY" -H "X-Citedesk-Client: 203.0.113.7" \
+  -H "Content-Type: application/json" \
+  -d '{"turns": [{"role": "user", "text": "What time does school start?"}]}'
 # {"kind":"answer","text":"Lessons run from 8:45 to 15:30, Monday to Friday. The gates open at 8:15.",
 #  "entry_ids":["DAY-01"],"language":"en","reason":null}
 ```
 
-The service keeps no conversations: the caller sends the whole one each time, ending with
-the person's message. `client` is any value that tells one visitor from another, such as a
-hash of their address; requests are rate-limited by it.
+The service keeps no conversations: the browser sends the whole one each time, ending with
+the person's message.
+
+### Behind a web server
+
+The browser talks to the organisation's website, and the web server passes the request on
+with two headers the browser cannot be trusted to set:
+
+| Header | What it carries |
+| --- | --- |
+| `X-Citedesk-Key` | The secret in `CITEDESK_SERVICE_KEY`. Without it, `401`. |
+| `X-Citedesk-Client` | A value that tells one visitor from another, such as their address. Requests are rate-limited by it. |
+
+The web server has to set both, replacing whatever the request brought: a browser that
+could choose its own client value would have no rate limit. With Caddy:
+
+```caddyfile
+@assistant {
+	method POST
+	path /assistant/v1/replies
+}
+handle @assistant {
+	request_body {
+		max_size 64KB
+	}
+	uri strip_prefix /assistant
+	reverse_proxy 127.0.0.1:8000 {
+		# Set, not added: whatever the browser sent under these names is replaced.
+		header_up X-Citedesk-Client {client_ip}
+		header_up X-Citedesk-Key {$CITEDESK_SERVICE_KEY}
+	}
+}
+```
+
+### Limits and budget
 
 What stands between the public and the bill is in the deployment file:
 
@@ -185,24 +218,46 @@ What stands between the public and the bill is in the deployment file:
 "prices": {"input": 0.10, "output": 0.50, "cache_read": 0.01, "cache_write": 0.125}
 ```
 
-| Situation | Response |
-| --- | --- |
-| No key, or a wrong one | `401` |
-| A message or a conversation over the limits, or turns out of order | `422` with a `code` |
-| A client over its allowance, or all clients over theirs | `429` with `Retry-After` |
-| The day's budget is spent | `200` with the fallback and `"reason": "budget_spent"` |
-| The model's draft cannot be trusted, or the model fails | `200` with the fallback and the reason |
-
 Every reply's cost is worked out from its token usage at the deployment's `prices`, in US
 dollars per million tokens, and added to the day's total. Once the total reaches
 `daily_budget_usd`, the model is not called again until the next UTC day: abuse can switch
 the assistant off for a day, not run up a bill. The limits live in memory, so the service
 runs as a single process, and the provider's own spend limit stays as the backstop.
 
-The log has one line per reply with its kind, its cost and how long it took, and never the
-text of a message.
+### Restricting who may use it
 
-`GET /healthz` answers without a key, for whatever watches the service.
+A deployment is open to whoever its web server lets in, unless it has an `access` section.
+With one, only people signed in with an identity provider and named on a list get a reply:
+
+```json
+"access": {
+  "issuer": "https://id.example/auth",
+  "jwks_url": "https://id.example/auth/.well-known/jwks.json",
+  "emails": ["staff@riverside-academy.example"]
+}
+```
+
+The person signs in on the organisation's website, and the browser sends the token the
+provider gave it as `Authorization: Bearer ...`. The service checks the token's signature
+against the provider's published keys, its issuer and its expiry, and then looks for its
+`email` or its `sub` on the list (`emails` and `subjects`). Tokens signed with a shared
+secret are refused, whatever their header says. This is how an assistant is tried by its
+own staff before anyone else sees it.
+
+### Responses
+
+| Situation | Response |
+| --- | --- |
+| No key, or a wrong one | `401`, code `wrong_key` |
+| A message or a conversation over the limits, or turns out of order | `422` with a `code` |
+| A client over its allowance, or all clients over theirs | `429` with `Retry-After` |
+| Access is restricted and there is no valid token | `401`, code `sign_in_required` |
+| Access is restricted and the person is not on the list | `403`, code `not_allowed` |
+| The day's budget is spent | `200` with the fallback and `"reason": "budget_spent"` |
+| The model's draft cannot be trusted, or the model fails | `200` with the fallback and the reason |
+
+The log has one line per reply with its kind, its cost and how long it took, and never the
+text of a message. `GET /healthz` answers without a key, for whatever watches the service.
 
 ## Roadmap
 
@@ -212,7 +267,8 @@ text of a message.
 - [x] Judge calibration as a command, with its samples in the repository
 - [x] HTTP service with rate limits and a daily budget
 - [ ] Web chat widget
-- [ ] Adapters: lead creation, staff sign-in, analytics
+- [x] Access restricted to signed-in people on a list
+- [ ] Adapters: lead creation, analytics
 - [ ] Conversation records, cost per conversation and retention
 
 ## Development

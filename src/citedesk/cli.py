@@ -158,7 +158,7 @@ async def _serve(args: argparse.Namespace) -> int:
     if len(key) < _SHORTEST_KEY:
         print(
             f"citedesk: set {SERVICE_KEY} to a secret of at least {_SHORTEST_KEY} characters: "
-            "callers present it as a bearer token.",
+            "the web server in front of the service presents it.",
             file=sys.stderr,
         )
         return 2

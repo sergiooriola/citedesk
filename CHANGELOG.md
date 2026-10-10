@@ -9,6 +9,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Restricted access: with an `access` section, a deployment replies only to people signed
+  in with an identity provider and named on a list. The service checks the signature of
+  their token against the provider's published keys.
 - The service: `citedesk serve` puts a deployment behind an HTTP interface with a key, a
   rate limit for each client and for all of them, bounds on messages and conversations, and
   a daily budget in dollars after which every reply is the fallback. The limits and the
@@ -32,6 +35,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The service takes its secret in `X-Citedesk-Key` and the visitor's identity in
+  `X-Citedesk-Client`, both set by the web server in front of it, instead of a bearer token
+  and a `client` field in the body: a browser that chooses its own client value has no rate
+  limit.
 - The judge accepts a claim that applies an entry to the person's own case when the case
   falls within what the entry says, and still rejects one that stretches the entry.
 - The model now states the language of the person's message before it writes, and
