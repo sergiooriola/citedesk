@@ -19,7 +19,9 @@ classifiers = [
 ]
 dependencies = [
     "anthropic>=1.11.0",
+    "fastapi>=0.142",
     "pydantic>=2.13.5",
+    "uvicorn>=0.53",
 ]
 
 [project.scripts]

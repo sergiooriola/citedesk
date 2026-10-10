@@ -3,6 +3,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import pytest
+import uvicorn
+from fastapi.testclient import TestClient
 
 from citedesk import Draft, Generation, Turn, Usage, cli
 from citedesk.exam import Claim, Judgement, Judging
@@ -36,7 +38,7 @@ class Model:
 
     options: dict[str, object]
 
-    def __init__(self, **options: object) -> None:
+    def __init__(self, client: object = None, **options: object) -> None:  # noqa: ARG002
         Model.options = options
 
     async def generate(self, *, instructions: str, turns: Sequence[Turn]) -> Generation:  # noqa: ARG002
@@ -274,3 +276,63 @@ def test_a_failed_judge_call_exits_with_two(
 
     assert calibrate(files, SAMPLES[0], options=["--readings", "1"]) == 2
     assert "CLEAN reading 1: the judge call failed" in capsys.readouterr().out
+
+
+class Server:
+    """Stands in for uvicorn's server: records what it was given instead of listening."""
+
+    config: uvicorn.Config
+
+    def __init__(self, config: uvicorn.Config) -> None:
+        Server.config = config
+
+    async def serve(self) -> None:
+        return None
+
+
+def serve(files: Path, monkeypatch: pytest.MonkeyPatch, key: str | None, *options: str) -> int:
+    monkeypatch.setattr(uvicorn, "Server", Server)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-a-real-key")
+    if key is None:
+        monkeypatch.delenv(cli.SERVICE_KEY, raising=False)
+    else:
+        monkeypatch.setenv(cli.SERVICE_KEY, key)
+    return cli.main(["serve", str(files / "deployment.json"), *options])
+
+
+def test_serve_starts_the_service_of_the_deployment(
+    files: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    prices = {"input": 0.1, "output": 0.5, "cache_read": 0.01, "cache_write": 0.125}
+    deployment = DEPLOYMENT | {"model": "the-model", "effort": "medium", "prices": prices}
+    (files / "deployment.json").write_text(json.dumps(deployment), encoding="utf-8")
+
+    status = serve(files, monkeypatch, "k" * 32, "--port", "8123")
+
+    assert status == 0
+    assert (Server.config.host, Server.config.port) == ("127.0.0.1", 8123)
+    assert Model.options["model"] == "the-model"
+    assert Model.options["effort"] == "medium"
+    client = TestClient(Server.config.app)  # type: ignore[arg-type]
+    assert client.get("/healthz").status_code == 200
+    assert client.post("/v1/replies", json={}).status_code == 401
+
+
+@pytest.mark.parametrize("key", [None, "too-short"])
+def test_serve_refuses_to_start_without_a_long_enough_key(
+    files: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    key: str | None,
+) -> None:
+    assert serve(files, monkeypatch, key) == 2
+    assert (
+        "set CITEDESK_SERVICE_KEY to a secret of at least 32 characters" in capsys.readouterr().err
+    )
+
+
+def test_serve_refuses_a_deployment_without_prices(
+    files: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert serve(files, monkeypatch, "k" * 32) == 2
+    assert "states no prices" in capsys.readouterr().err

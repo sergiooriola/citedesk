@@ -1,11 +1,26 @@
 {
   "knowledge": "entries.jsonl",
-  "office_entry_ids": ["OFFICE-01"],
+  "office_entry_ids": [
+    "OFFICE-01"
+  ],
   "fallback": "I can't answer that here. The school office can help: call 01234 567890 or write to office@riverside-academy.example.",
   "model": "claude-haiku-5-5",
   "effort": "low",
   "rules": [
     "Fees and payment terms are reserved for the office: never state an amount.",
     "Never say whether a place is available, and never promise admission."
-  ]
+  ],
+  "limits": {
+    "message_chars": 600,
+    "turns": 20,
+    "client_requests_per_minute": 6,
+    "requests_per_minute": 60,
+    "daily_budget_usd": 1.0
+  },
+  "prices": {
+    "input": 0.1,
+    "output": 0.5,
+    "cache_read": 0.01,
+    "cache_write": 0.125
+  }
 }
