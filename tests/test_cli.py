@@ -218,3 +218,59 @@ def test_a_missing_file_exits_with_two(files: Path, capsys: pytest.CaptureFixtur
 
     assert exam(files) == 2
     assert "cases.jsonl" in capsys.readouterr().err
+
+
+# The stand-in judge calls every claim "The reply's claim.", so that is what a sample names.
+SAMPLES: list[dict[str, object]] = [
+    {"id": "CLEAN", "ask": "Hours?", "reply": "From 8:45.", "language": "en"},
+    {"id": "PRICE", "ask": "Fees?", "reply": "It is £4.", "invented": ["claim"], "language": "en"},
+]
+
+
+def calibrate(files: Path, *samples: Mapping[str, object], options: Sequence[str] = ()) -> int:
+    lines = "".join(json.dumps(sample) + "\n" for sample in samples)
+    (files / "samples.jsonl").write_text(lines, encoding="utf-8")
+    paths = [str(files / "deployment.json"), str(files / "samples.jsonl")]
+    return cli.main(["calibrate", *paths, *options])
+
+
+def test_a_judge_that_reads_every_sample_right_exits_with_zero(
+    files: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    status = calibrate(files, *SAMPLES, options=["--readings", "2", "--judge-model", "a-judge"])
+
+    assert status == 0
+    assert Judge.options == {"model": "a-judge", "effort": "low"}
+    assert capsys.readouterr().out == (
+        "2 samples x 2 readings. Judge: a-judge, effort low.\n"
+        "right     4 of 4\n"
+        "tokens    28 in, 0 out, 0 cache read, 0 cache write\n"
+    )
+
+
+def test_a_judge_that_misreads_a_sample_exits_with_one_and_says_how(
+    files: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    alarm = {"id": "ALARM", "ask": "Fees?", "reply": "Not £1 here.", "language": "en"}
+    missed = SAMPLES[0] | {"id": "MISSED", "invented": ["8:45"]}
+
+    status = calibrate(files, alarm, missed, options=["--readings", "1"])
+
+    assert status == 1
+    assert capsys.readouterr().out.splitlines()[1:3] == [
+        'ALARM reading 1: false alarm "The reply\'s claim."',
+        "MISSED reading 1: missed '8:45'",
+    ]
+
+
+def test_a_failed_judge_call_exits_with_two(
+    files: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Unreachable(Judge):
+        async def judge(self, *, instructions: str, exchange: str) -> Judging:  # noqa: ARG002
+            return Judging()
+
+    monkeypatch.setattr(cli, "AnthropicJudge", Unreachable)
+
+    assert calibrate(files, SAMPLES[0], options=["--readings", "1"]) == 2
+    assert "CLEAN reading 1: the judge call failed" in capsys.readouterr().out

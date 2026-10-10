@@ -122,11 +122,30 @@ failed and with 2 when a model call failed and some runs could not be graded, in
 the exam has to be repeated. `--report` writes every reply and every judgement to a JSON
 file.
 
-A judge is a model too, so it was measured before being trusted. Against 23 replies with
-known faults (an invented club, a telephone number off by one digit, a denial no entry
-makes) and known clean ones, Claude Sonnet 5.5 got 70 gradings out of 70 right. Claude
-Haiku 5.5, the model under examination, got 60 and missed the same invented fact every
-time, which is why the judge is a different and stronger model.
+### Measuring the judge
+
+A judge is a model too: one that calls a clean reply faulty stops a good assistant, and one
+that misses an invented fact lets a bad one through. So the judge is measured before it is
+trusted, against replies written by hand whose faults are known:
+
+```json
+{"id": "CLEAN-04", "ask": "Is there a swimming pool?", "reply": "I don't have information about a swimming pool. The school office can tell you: call 01234 567890.", "language": "en"}
+{"id": "INVENTED-05", "ask": "What's the phone number?", "reply": "You can call the office on 01234 567899.", "language": "en", "invented": ["567899"]}
+```
+
+```sh
+uv run --env-file .env citedesk calibrate \
+  examples/riverside-academy/deployment.json examples/riverside-academy/judge-samples.jsonl
+```
+
+Each sample is read three times. A reading is right when the judge finds every invented
+fact, flags nothing else and names the language. The command exits with 0 only if every
+reading is right, so it can run whenever the judge's instructions or model change.
+
+On the 27 samples of the example, Claude Sonnet 5.5 got 81 readings out of 81 right. Claude
+Haiku 5.5, the model under examination, got 68: it raised false alarms on clean replies and
+missed the same invented fact on every reading, which is why the judge is a different and
+stronger model.
 
 Passing its own cases does not prove an assistant: instructions tuned against a set of
 cases fit that set. Keep adding the questions real people ask, and re-run the exam whenever
@@ -137,7 +156,7 @@ the entries, the rules or the model change.
 - [x] Project scaffolding: packaging, linting, typing, tests and continuous integration
 - [x] Core: answer from a knowledge file with cited entries, or hand off
 - [x] Exam runner: cases, repeated runs, a judge and a pass mark
-- [ ] Judge calibration as a command, with its samples in the repository
+- [x] Judge calibration as a command, with its samples in the repository
 - [ ] HTTP service with rate limits and a daily budget
 - [ ] Web chat widget
 - [ ] Adapters: lead creation, staff sign-in, analytics

@@ -1,5 +1,6 @@
 """The exam an assistant has to pass before it is exposed to anyone."""
 
+from citedesk.exam.calibration import Reading, Sample, calibrate, load_samples
 from citedesk.exam.cases import Case, ExamError, load_cases
 from citedesk.exam.grading import CRITICAL, Failure, grade
 from citedesk.exam.judge import Claim, Judge, Judgement, Judging
@@ -15,9 +16,13 @@ __all__ = [
     "Judge",
     "Judgement",
     "Judging",
+    "Reading",
     "Report",
     "Run",
+    "Sample",
     "Verdict",
+    "calibrate",
     "grade",
     "load_cases",
+    "load_samples",
 ]
