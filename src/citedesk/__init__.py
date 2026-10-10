@@ -3,11 +3,14 @@
 from importlib.metadata import version
 
 from citedesk.assistant import Assistant, Reply
+from citedesk.deployment import Deployment, DeploymentError
 from citedesk.knowledge import Entry, Knowledge, KnowledgeError
 from citedesk.model import Draft, Generation, Model, Turn, Usage
 
 __all__ = [
     "Assistant",
+    "Deployment",
+    "DeploymentError",
     "Draft",
     "Entry",
     "Generation",
