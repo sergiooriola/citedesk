@@ -169,8 +169,8 @@ curl http://127.0.0.1:8000/v1/replies \
 #  "entry_ids":["DAY-01"],"language":"en","reason":null}
 ```
 
-The service keeps no conversations: the browser sends the whole one each time, ending with
-the person's message.
+The service holds no conversations in memory: the browser sends the whole one each time,
+ending with the person's message.
 
 ### Behind a web server
 
@@ -244,6 +244,34 @@ against the provider's published keys, its issuer and its expiry, and then looks
 secret are refused, whatever their header says. This is how an assistant is tried by its
 own staff before anyone else sees it.
 
+### Keeping what is said
+
+By default the service keeps nothing: only the log line of each reply, without its text. A
+deployment that wants to read what people ask, to see what its entries are missing, says
+where each exchange goes:
+
+```json
+"records": {
+  "url": "https://records.example/exchanges",
+  "headers": {"apikey": "a-public-key"},
+  "key_header": "X-Records-Key",
+  "fields": {"asked": "question", "replied": "reply"}
+}
+```
+
+After each reply, the service posts one JSON object there with `at`, `conversation`, `turn`,
+`asked`, `replied`, `kind`, `entry_ids`, `reason`, `language`, `usd` and `ms`. `fields` gives
+them other names when the receiver has its own, and the secret for `key_header` comes from
+`CITEDESK_RECORDS_KEY`. That is enough for a database with an HTTP interface.
+
+- `conversation` is whatever the browser sends under that name with the conversation: a
+  random value, new for each one, so that its exchanges can be read together. It identifies
+  nobody, and the client's address is never part of a record.
+- A record is sent once the person has their reply, and one that cannot be delivered is
+  logged and lost: a reply never waits for its record or fails with it.
+- What people write is personal data wherever it ends up. How long records are kept, and
+  who may read them, is for the organisation to decide and to tell the people who write.
+
 ### Responses
 
 | Situation | Response |
@@ -269,7 +297,7 @@ text of a message. `GET /healthz` answers without a key, for whatever watches th
 - [ ] Web chat widget
 - [x] Access restricted to signed-in people on a list
 - [ ] Adapters: lead creation, analytics
-- [ ] Conversation records, cost per conversation and retention
+- [x] Records of each exchange, with its cost, sent to the organisation's own store
 
 ## Development
 

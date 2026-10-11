@@ -9,6 +9,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Records: with a `records` section, the service posts each exchange, with its cost and how
+  long it took, to an address of the organisation's own once the reply has been sent. The
+  request takes a `conversation` name so that the exchanges of one can be read together.
 - Restricted access: with an `access` section, a deployment replies only to people signed
   in with an identity provider and named on a list. The service checks the signature of
   their token against the provider's published keys.

@@ -212,6 +212,7 @@ source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
     { name = "fastapi" },
+    { name = "httpx2" },
     { name = "pydantic" },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "uvicorn" },
@@ -219,7 +220,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx2" },
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -231,6 +231,7 @@ dev = [
 requires-dist = [
     { name = "anthropic", specifier = ">=1.11.0" },
     { name = "fastapi", specifier = ">=0.142" },
+    { name = "httpx2", specifier = ">=2.13.1" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.15" },
     { name = "uvicorn", specifier = ">=0.53" },
@@ -238,7 +239,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx2", specifier = ">=2.13.1" },
     { name = "mypy", specifier = ">=2.4" },
     { name = "pre-commit", specifier = ">=4.6" },
     { name = "pytest", specifier = ">=9.1" },

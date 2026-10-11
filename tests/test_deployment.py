@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from citedesk import Generation, KnowledgeError, Turn, Usage
-from citedesk.deployment import Access, Deployment, DeploymentError, Limits, Prices
+from citedesk.deployment import Access, Deployment, DeploymentError, Limits, Prices, Records
 
 from .conftest import ScriptedModel
 
@@ -79,6 +79,20 @@ def test_a_deployment_is_open_unless_it_lists_who_may_use_it(tmp_path: Path) -> 
     )
 
 
+def test_a_deployment_keeps_no_records_unless_it_says_where(tmp_path: Path) -> None:
+    assert Deployment.from_file(write(tmp_path)).records is None
+
+    records = {
+        "url": "https://records.example/exchanges",
+        "headers": {"apikey": "a-public-key"},
+        "key_header": "X-Records-Key",
+        "fields": {"asked": "question"},
+    }
+    deployment = Deployment.from_file(write(tmp_path, records=records))
+
+    assert deployment.records == Records.model_validate(records)
+
+
 def test_prices_turn_usage_into_dollars() -> None:
     prices = Prices(input=0.1, output=0.5, cache_read=0.01, cache_write=0.125)
     usage = Usage(
@@ -118,6 +132,8 @@ def test_the_entries_file_is_found_next_to_the_deployment_file(
         {"prices": {"input": 0.1}},
         {"access": {"issuer": "https://id.example", "jwks_url": "https://id.example/keys"}},
         {"access": {"issuer": "x", "jwks_url": "http://id.example/keys", "subjects": ["a"]}},
+        {"records": {"url": "http://records.example"}},
+        {"records": {"url": "https://records.example", "fields": {"question": "pregunta"}}},
         {"unexpected": True},
     ],
 )

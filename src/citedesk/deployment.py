@@ -17,6 +17,24 @@ if TYPE_CHECKING:
     from citedesk.model import Model
 
 
+# The fields of a record (citedesk.service.records.Exchange), which a deployment may rename.
+RECORD_FIELDS = frozenset(
+    {
+        "at",
+        "conversation",
+        "turn",
+        "asked",
+        "replied",
+        "kind",
+        "entry_ids",
+        "reason",
+        "language",
+        "usd",
+        "ms",
+    }
+)
+
+
 class DeploymentError(ValueError):
     """The deployment file cannot be used as it is."""
 
@@ -92,6 +110,35 @@ class Access(BaseModel):
         return self
 
 
+class Records(BaseModel):
+    """Where each exchange is sent to be kept, as a JSON object in a POST request.
+
+    Attributes:
+        url: The address that takes the records.
+        headers: Headers sent with every record that are no secret, such as a public key
+            the receiver asks for.
+        key_header: The header that carries the receiver's secret. The secret itself is not
+            in this file: the service reads it from its environment.
+        fields: Other names for the fields of a record, when the receiver has its own:
+            `{"asked": "question"}` sends the person's message as `question`.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    url: str = Field(pattern=r"^https://")
+    headers: dict[str, str] = {}
+    key_header: str | None = Field(default=None, min_length=1)
+    fields: dict[str, Annotated[str, Field(min_length=1)]] = {}
+
+    @model_validator(mode="after")
+    def _only_known_fields_are_renamed(self) -> Self:
+        unknown = sorted(set(self.fields) - RECORD_FIELDS)
+        if unknown:
+            message = f"A record has no field called {', '.join(unknown)}."
+            raise ValueError(message)
+        return self
+
+
 class _File(BaseModel):
     """The deployment file as it is written."""
 
@@ -106,6 +153,7 @@ class _File(BaseModel):
     limits: Limits = Limits()
     prices: Prices | None = None
     access: Access | None = None
+    records: Records | None = None
 
 
 @dataclass(frozen=True)
@@ -124,6 +172,7 @@ class Deployment:
     limits: Limits = field(default_factory=Limits)
     prices: Prices | None = None
     access: Access | None = None
+    records: Records | None = None
 
     @classmethod
     def from_file(cls, path: Path) -> Deployment:
@@ -131,8 +180,9 @@ class Deployment:
 
         The file has `knowledge` (the path of the entries file, relative to this one),
         `office_entry_ids`, `fallback` and, optionally, `rules`, `model`, `effort`, `limits`,
-        `prices` and `access`. The service needs the prices: without them it cannot keep to
-        a budget. Without `access` it replies to whoever reaches it.
+        `prices`, `access` and `records`. The service needs the prices: without them it
+        cannot keep to a budget. Without `access` it replies to whoever reaches it, and
+        without `records` it keeps nothing of what is said.
 
         Raises:
             DeploymentError: If the file is not a valid deployment.
@@ -153,6 +203,7 @@ class Deployment:
             file.limits,
             file.prices,
             file.access,
+            file.records,
         )
 
     def assistant(self, model: Model) -> Assistant:

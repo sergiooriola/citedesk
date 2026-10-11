@@ -19,7 +19,7 @@ from citedesk.deployment import Deployment, DeploymentError
 from citedesk.exam import Exam, ExamError, calibrate, load_cases, load_samples
 from citedesk.knowledge import KnowledgeError
 from citedesk.model import Effort, Turn, Usage
-from citedesk.service import create_app
+from citedesk.service import HttpRecorder, Parts, create_app
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -30,6 +30,8 @@ _EXIT = {"passed": 0, "failed": 1, "incomplete": 2}
 
 # The environment variable with the secret callers of the service have to present.
 SERVICE_KEY = "CITEDESK_SERVICE_KEY"
+# The one with the secret the receiver of the records asks for, when the deployment has one.
+RECORDS_KEY = "CITEDESK_RECORDS_KEY"
 _SHORTEST_KEY = 32
 _REPLY_TIMEOUT = 30.0
 
@@ -166,7 +168,18 @@ async def _serve(args: argparse.Namespace) -> int:
     # long attempt.
     client = anthropic.AsyncAnthropic(timeout=_REPLY_TIMEOUT, max_retries=1)
     model = AnthropicModel(client, model=deployment.model, effort=deployment.effort)
-    app = create_app(deployment, model, key=key)
+    recorder = None
+    if deployment.records is not None:
+        records_key = os.environ.get(RECORDS_KEY)
+        if deployment.records.key_header and not records_key:
+            print(
+                f"citedesk: set {RECORDS_KEY} to the secret the receiver of the records asks "
+                f"for in {deployment.records.key_header}.",
+                file=sys.stderr,
+            )
+            return 2
+        recorder = HttpRecorder(deployment.records, key=records_key)
+    app = create_app(deployment, model, key=key, parts=Parts(recorder=recorder))
     # Uvicorn sets up only its own loggers; this shows the service's line for each reply.
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(message)s")
     await uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port)).serve()
