@@ -1,13 +1,13 @@
 from collections.abc import Sequence
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 from fastapi.testclient import TestClient
 
 from citedesk import Draft, Generation, KnowledgeError, Turn, Usage
 from citedesk.deployment import Access, Deployment, DeploymentError
-from citedesk.service import Clocks, create_app
+from citedesk.service import Clocks, Exchange, Parts, create_app
 from citedesk.service.access import Refusal
 
 KEY = "a-secret-of-at-least-thirty-two-chars"
@@ -40,6 +40,16 @@ class Gate:
         return None if token == LISTED else "not_allowed"
 
 
+class Recorder:
+    """A recorder that keeps what it is given in a list."""
+
+    def __init__(self) -> None:
+        self.exchanges: list[Exchange] = []
+
+    async def record(self, exchange: Exchange) -> None:
+        self.exchanges.append(exchange)
+
+
 class Service:
     """The service of the test deployment, with a clock and a calendar the test moves."""
 
@@ -48,14 +58,16 @@ class Service:
         deployment: Deployment,
         generation: Generation | None = None,
         gate: Gate | None = None,
+        *,
+        recorded: bool = True,
     ) -> None:
         self.now = 1000.0
         self.day = date(2026, 10, 10)
         self.model = Model(generation or Generation("completed", ANSWER, USAGE))
         clocks = Clocks(seconds=lambda: self.now, today=lambda: self.day)
-        self.client = TestClient(
-            create_app(deployment, self.model, key=KEY, gate=gate, clocks=clocks)
-        )
+        self.recorder = Recorder()
+        parts = Parts(gate=gate, recorder=self.recorder if recorded else None, clocks=clocks)
+        self.client = TestClient(create_app(deployment, self.model, key=KEY, parts=parts))
 
     def ask(
         self,
@@ -63,11 +75,13 @@ class Service:
         *,
         client: str | None = "a",
         headers: dict[str, str] | None = None,
+        conversation: str | None = None,
     ) -> tuple[int, dict[str, object]]:
         sent = dict(AUTH if headers is None else headers)
         if client is not None:
             sent["X-Citedesk-Client"] = client
-        response = self.client.post("/v1/replies", json={"turns": turns}, headers=sent)
+        body = {"turns": turns} | ({} if conversation is None else {"conversation": conversation})
+        response = self.client.post("/v1/replies", json=body, headers=sent)
         self.retry_after = response.headers.get("retry-after")
         return response.status_code, response.json()
 
@@ -285,3 +299,88 @@ def test_a_deployment_whose_office_entry_is_missing_cannot_be_served(
 
     with pytest.raises(KnowledgeError, match="OFFICE-09"):
         create_app(broken, Model(Generation("failed")), key=KEY)
+
+
+def test_each_exchange_is_recorded_once_its_reply_has_been_sent(service: Service) -> None:
+    turns = [*ASK, {"role": "assistant", "text": "From 8:45."}, {"role": "user", "text": "And?"}]
+
+    assert service.ask(turns, conversation="k3_Zp-9")[0] == 200
+
+    (exchange,) = service.recorder.exchanges
+    assert datetime.fromisoformat(exchange.at).tzinfo == UTC
+    assert replace(exchange, at="", ms=0) == Exchange(
+        at="",
+        conversation="k3_Zp-9",
+        turn=2,
+        asked="And?",
+        replied="From 8:45.",
+        kind="answer",
+        entry_ids=("DAY-01",),
+        reason=None,
+        language="en",
+        usd=0.0004,
+        ms=0,
+    )
+
+
+def test_a_fallback_is_recorded_with_its_reason(deployment: Deployment) -> None:
+    unbacked = ANSWER.model_copy(update={"entry_ids": []})
+    service = Service(deployment, Generation("completed", unbacked, USAGE))
+
+    service.ask()
+
+    (exchange,) = service.recorder.exchanges
+    assert (exchange.kind, exchange.reason, exchange.conversation, exchange.turn) == (
+        "fallback",
+        "no_entries",
+        None,
+        1,
+    )
+    assert exchange.replied == "The office can help: call 555 0100."
+
+
+def test_a_reply_refused_for_lack_of_budget_is_recorded_as_costing_nothing(
+    deployment: Deployment,
+) -> None:
+    tight = replace(
+        deployment, limits=deployment.limits.model_copy(update={"daily_budget_usd": 0.0004})
+    )
+    service = Service(tight)
+
+    service.ask(client="a")
+    service.ask(client="b")
+
+    assert [(e.reason, e.usd, e.ms) for e in service.recorder.exchanges][1] == (
+        "budget_spent",
+        0,
+        0,
+    )
+
+
+def test_what_is_refused_before_a_reply_leaves_no_record(deployment: Deployment) -> None:
+    service = Service(deployment, gate=Gate())
+
+    service.ask()
+    service.ask(headers={})
+    service.ask(
+        [{"role": "assistant", "text": "Hello."}], headers=AUTH | {"Authorization": "Bearer x"}
+    )
+
+    assert service.recorder.exchanges == []
+
+
+def test_without_a_recorder_nothing_is_kept_and_the_reply_is_the_same(
+    deployment: Deployment,
+) -> None:
+    service = Service(deployment, recorded=False)
+
+    assert service.ask(conversation="abc")[0] == 200
+    assert service.recorder.exchanges == []
+
+
+@pytest.mark.parametrize("conversation", ["", "with spaces", "x" * 65, "ñ"])
+def test_a_conversation_name_that_is_not_a_plain_token_is_refused(
+    service: Service, conversation: str
+) -> None:
+    assert service.ask(conversation=conversation)[0] == 422
+    assert service.recorder.exchanges == []

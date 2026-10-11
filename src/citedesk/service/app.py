@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
 import math
 import time
-from typing import Annotated, Literal
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
@@ -17,6 +20,10 @@ from citedesk.deployment import Deployment, DeploymentError
 from citedesk.model import Model, Turn
 from citedesk.service.access import Gate, TokenGate
 from citedesk.service.limits import Clocks, DailyBudget, RateLimiter
+from citedesk.service.records import Exchange, Recorder
+
+if TYPE_CHECKING:
+    from collections.abc import Coroutine
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +61,16 @@ class ReplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     turns: list[TurnIn] = Field(min_length=1, max_length=_MOST_TURNS)
+    conversation: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$",
+        description=(
+            "A name the browser gives the conversation, random and new for each one, so "
+            "that its records can be read together. It identifies nobody."
+        ),
+    )
 
 
 class ReplyResponse(BaseModel):
@@ -69,13 +86,24 @@ class ReplyResponse(BaseModel):
     reason: Rejection | Literal["budget_spent"] | None
 
 
+@dataclass(frozen=True)
+class Parts:
+    """What the service leans on besides the model. Each one has a default.
+
+    Attributes:
+        gate: Decides who may use the service. By default, whoever the deployment's
+            `access` lists, or everyone when it has none.
+        recorder: Keeps each exchange. By default, none: nothing of what is said is kept.
+        clocks: Where the rate limits and the budget read the time from.
+    """
+
+    gate: Gate | None = None
+    recorder: Recorder | None = None
+    clocks: Clocks = field(default_factory=Clocks)
+
+
 def create_app(
-    deployment: Deployment,
-    model: Model,
-    *,
-    key: str,
-    gate: Gate | None = None,
-    clocks: Clocks | None = None,
+    deployment: Deployment, model: Model, *, key: str, parts: Parts | None = None
 ) -> FastAPI:
     """Build the service of one deployment.
 
@@ -88,10 +116,7 @@ def create_app(
         deployment: The deployment to serve. It has to state its prices.
         model: The model its assistant runs on.
         key: The secret the web server has to present.
-        gate: Decides who may use the service. By default, whoever the deployment's
-            `access` lists, or everyone when it has none.
-        clocks: Where the rate limits and the budget read the time from. Tests replace
-            them.
+        parts: What the service leans on besides the model. Tests replace them.
 
     Raises:
         DeploymentError: If the deployment states no prices.
@@ -103,12 +128,16 @@ def create_app(
     prices = deployment.prices
     limits = deployment.limits
     assistant = deployment.assistant(model)
-    if gate is None and deployment.access is not None:
-        gate = TokenGate(deployment.access)
-    clocks = clocks or Clocks()
-    per_client = RateLimiter(limits.client_requests_per_minute, clock=clocks.seconds)
-    overall = RateLimiter(limits.requests_per_minute, clock=clocks.seconds)
-    budget = DailyBudget(limits.daily_budget_usd, today=clocks.today)
+    parts = parts or Parts()
+    gate = parts.gate or (TokenGate(deployment.access) if deployment.access else None)
+    recorder = parts.recorder
+    per_client = RateLimiter(limits.client_requests_per_minute, clock=parts.clocks.seconds)
+    overall = RateLimiter(limits.requests_per_minute, clock=parts.clocks.seconds)
+    budget = DailyBudget(limits.daily_budget_usd, today=parts.clocks.today)
+
+    def keep(request: ReplyRequest, answer: ReplyResponse, usd: float, ms: int) -> None:
+        if recorder is not None:
+            _in_the_background(recorder.record(_exchange(request, answer, usd, ms)))
 
     def authorised(presented: Annotated[str | None, Depends(_key)]) -> None:
         if not hmac.compare_digest((presented or "").encode(), key.encode()):
@@ -141,18 +170,21 @@ def create_app(
             raise _too_many_requests(wait)
         if budget.exhausted:
             logger.warning("reply kind=fallback reason=budget_spent")
-            return ReplyResponse(
+            spent = ReplyResponse(
                 kind="fallback",
                 text=deployment.fallback,
                 entry_ids=[],
                 language=None,
                 reason="budget_spent",
             )
+            keep(request, spent, 0.0, 0)
+            return spent
 
         started = time.perf_counter()
         sent = await assistant.reply(turns)
         cost = prices.cost(sent.usage)
         budget.spend(cost)
+        ms = int((time.perf_counter() - started) * 1000)
         # No message text and no client in the log: what people write stays out of it.
         logger.info(
             "reply kind=%s reason=%s usd=%.6f spent_today=%.4f ms=%d",
@@ -160,17 +192,48 @@ def create_app(
             sent.rejection,
             cost,
             budget.spent,
-            (time.perf_counter() - started) * 1000,
+            ms,
         )
-        return ReplyResponse(
+        answer = ReplyResponse(
             kind=sent.kind,
             text=sent.text,
             entry_ids=list(sent.entry_ids),
             language=sent.language,
             reason=sent.rejection,
         )
+        keep(request, answer, cost, ms)
+        return answer
 
     return app
+
+
+def _exchange(request: ReplyRequest, answer: ReplyResponse, usd: float, ms: int) -> Exchange:
+    """Put together the record of a message and its reply."""
+    return Exchange(
+        at=datetime.now(UTC).isoformat(timespec="seconds"),
+        conversation=request.conversation,
+        turn=sum(turn.role == "user" for turn in request.turns),
+        asked=request.turns[-1].text,
+        replied=answer.text,
+        kind=answer.kind,
+        entry_ids=tuple(answer.entry_ids),
+        reason=answer.reason,
+        language=answer.language,
+        usd=round(usd, 6),
+        ms=ms,
+    )
+
+
+# The loop only holds a weak reference to a task: without these it could be collected before
+# it has run.
+_background: set[asyncio.Task[None]] = set()
+
+
+def _in_the_background(work: Coroutine[None, None, None]) -> None:
+    """Start some work that the reply does not wait for."""
+    task = asyncio.create_task(work)
+    _background.add(task)
+    task.add_done_callback(_background.discard)
 
 
 def _conversation(request: ReplyRequest, most_turns: int, most_chars: int) -> list[Turn]:

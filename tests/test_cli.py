@@ -1,6 +1,7 @@
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import uvicorn
@@ -329,6 +330,34 @@ def test_serve_refuses_to_start_without_a_long_enough_key(
     assert (
         "set CITEDESK_SERVICE_KEY to a secret of at least 32 characters" in capsys.readouterr().err
     )
+
+
+def test_serve_records_exchanges_when_the_deployment_says_where(
+    files: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    prices = {"input": 0.1, "output": 0.5, "cache_read": 0.01, "cache_write": 0.125}
+    records = {"url": "https://records.example/exchanges", "key_header": "X-Records-Key"}
+    deployment = DEPLOYMENT | {"prices": prices, "records": records}
+    (files / "deployment.json").write_text(json.dumps(deployment), encoding="utf-8")
+    sent: list[dict[str, str]] = []
+
+    async def post(self: object, url: str, *, json: object, headers: dict[str, str]) -> object:  # noqa: ARG001
+        sent.append({"url": url, **headers})
+        return SimpleNamespace(is_error=False)
+
+    monkeypatch.setattr("httpx2.AsyncClient.post", post)
+    monkeypatch.delenv(cli.RECORDS_KEY, raising=False)
+
+    assert serve(files, monkeypatch, "k" * 32) == 2
+    assert "set CITEDESK_RECORDS_KEY to the secret" in capsys.readouterr().err
+
+    monkeypatch.setenv(cli.RECORDS_KEY, "a-secret")
+    assert serve(files, monkeypatch, "k" * 32) == 0
+    headers = {"X-Citedesk-Key": "k" * 32, "X-Citedesk-Client": "a"}
+    turns = [{"role": "user", "text": "What are the hours?"}]
+    with TestClient(Server.config.app) as client:  # type: ignore[arg-type]
+        assert client.post("/v1/replies", json={"turns": turns}, headers=headers).status_code == 200
+    assert sent == [{"url": "https://records.example/exchanges", "X-Records-Key": "a-secret"}]
 
 
 def test_serve_refuses_a_deployment_without_prices(
