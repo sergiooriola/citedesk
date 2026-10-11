@@ -38,6 +38,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A message that asks nothing, such as a greeting, gets a short reply that rests on the
+  entry about the assistant itself, and the office's contact details are given on a hand-off
+  or when asked for, not as a closing line. With no such entry a greeting could only rest on
+  the office entries, so "hello" was answered with a telephone number.
 - The service takes its secret in `X-Citedesk-Key` and the visitor's identity in
   `X-Citedesk-Client`, both set by the web server in front of it, instead of a bearer token
   and a `client` field in the body: a browser that chooses its own client value has no rate

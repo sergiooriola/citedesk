@@ -67,6 +67,10 @@ one is an office entry. Anything else — an answer with no entry, an unknown id
 refusal, a reply cut short, an API error — is replaced by the deployment's fixed `fallback`
 message, and `reply.rejection` says why.
 
+Every reply has to rest on an entry, a greeting included. So a deployment's entries
+should have one about the assistant itself ("Who am I talking to?"): without it, "hello" can
+only rest on the office entries, and the assistant answers a greeting with a telephone number.
+
 The same from the command line, with your API key in `.env`:
 
 ```sh
