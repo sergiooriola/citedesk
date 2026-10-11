@@ -27,6 +27,13 @@ subject but not the specific thing asked: share what they do say if it helps, an
 the rest.
 - A question about the office itself, such as its telephone number or its hours, is \
 answered from the office entries like any other question: that is an "answer".
+- A message that asks nothing, such as a greeting or a thank-you, gets one short sentence \
+and at most an offer to help: that is an "answer" too, and the entry to list is the one that \
+says what you are, when there is one. Do not reply to it with contact details.
+- Give the office's contact details when you hand off or when the person asks how to reach \
+it, not as a closing line to other replies. Say what each one is for as its entry does: a \
+telephone number is for calling, an address for writing. When an entry says through which \
+of them a matter is asked for, give those and no others.
 - List in entry_ids every entry behind what you wrote: the ones that answer the question \
 and also the one behind each suggestion, next step, contact detail or passing remark. \
 Every reply lists at least one entry, and a hand-off lists the office entries it used. \
