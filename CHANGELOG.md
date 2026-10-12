@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-12
+
 ### Added
 
 - Records: with a `records` section, the service posts each exchange, with its cost and how
@@ -59,4 +61,5 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   denied because the entries are silent about it, and every entry behind a passing remark
   is cited.
 
-[Unreleased]: https://github.com/sergiooriola/citedesk/commits/main
+[Unreleased]: https://github.com/sergiooriola/citedesk/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/sergiooriola/citedesk/releases/tag/v0.1.0

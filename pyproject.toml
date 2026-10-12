@@ -1,6 +1,6 @@
 [project]
 name = "citedesk"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "An assistant engine that answers only from approved entries, cites the entry behind every answer and hands everything else to a person."
 readme = "README.md"
 license = "MIT"
