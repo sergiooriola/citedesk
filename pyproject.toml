@@ -9,7 +9,7 @@ authors = [{ name = "Sergio Oriola" }]
 requires-python = ">=3.13"
 keywords = ["assistant", "chatbot", "citations", "grounding", "llm", "evals"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3 :: Only",
