@@ -38,6 +38,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The project is marked alpha instead of pre-alpha, in the README and in the package's
+  classifiers: it runs a public assistant in production. Its interfaces may still change
+  before 1.0.
 - A message that asks nothing, such as a greeting, gets a short reply that rests on the
   entry about the assistant itself, and the office's contact details are given on a hand-off
   or when asked for, not as a closing line. With no such entry a greeting could only rest on

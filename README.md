@@ -6,9 +6,10 @@
 An assistant engine that answers only from entries you have approved, cites the entry behind
 every answer, and hands everything else to a person.
 
-> [!WARNING]
-> **Pre-alpha.** Nothing here is usable yet. The repository is public from its first commit so
-> that the way it is built is part of the record. The [roadmap](#roadmap) says what exists.
+> [!NOTE]
+> **Alpha, and in use.** citedesk runs one organisation's public assistant in production. It has
+> no versioned release yet, and the deployment file, the HTTP interface and the Python API may
+> still change before 1.0. The [roadmap](#roadmap) says what exists and what does not.
 
 ## Why
 
