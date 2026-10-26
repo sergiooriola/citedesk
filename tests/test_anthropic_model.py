@@ -21,17 +21,21 @@ class Messages:
         self.response = response
         self.request: dict[str, Any] = {}
 
-    async def parse(self, **request: Any) -> object:  # noqa: ANN401
+    async def create(self, **request: Any) -> object:  # noqa: ANN401
         self.request = request
         if isinstance(self.response, Exception):
             raise self.response
         return self.response
 
 
-def response(stop_reason: str, parsed_output: Draft | None = DRAFT) -> SimpleNamespace:
+def response(stop_reason: str, text: str | None = DRAFT.model_dump_json()) -> SimpleNamespace:
+    """A response as the API sends it: the output as text, which the caller parses."""
+    content = [SimpleNamespace(type="thinking", thinking="...")]
+    if text is not None:
+        content.append(SimpleNamespace(type="text", text=text))
     return SimpleNamespace(
         stop_reason=stop_reason,
-        parsed_output=parsed_output,
+        content=content,
         usage=SimpleNamespace(
             input_tokens=12,
             output_tokens=34,
@@ -71,8 +75,10 @@ def test_the_request_caches_the_instructions_and_asks_for_a_draft() -> None:
             {"role": "assistant", "content": "From 8:45."},
             {"role": "user", "content": "And?"},
         ],
-        "output_format": Draft,
-        "output_config": {"effort": "medium"},
+        "output_config": {
+            "effort": "medium",
+            "format": {"type": "json_schema", "schema": anthropic.transform_schema(Draft)},
+        },
     }
 
 
@@ -86,10 +92,21 @@ def test_a_refusal_or_a_cut_reply_carries_no_draft(stop_reason: str, outcome: st
     assert generation.usage.output_tokens == 34
 
 
-def test_a_response_that_could_not_be_parsed_counts_as_failed() -> None:
-    generation = generate(Messages(response("end_turn", parsed_output=None)))
+def test_a_reply_cut_short_in_the_middle_of_its_json_counts_as_truncated() -> None:
+    half = DRAFT.model_dump_json()[:30]
+
+    generation = generate(Messages(response("max_tokens", text=half)))
+
+    assert (generation.outcome, generation.draft) == ("truncated", None)
+    assert generation.usage.output_tokens == 34
+
+
+@pytest.mark.parametrize("text", [None, "not json", '{"language": "en"}'])
+def test_a_response_that_could_not_be_parsed_counts_as_failed(text: str | None) -> None:
+    generation = generate(Messages(response("end_turn", text=text)))
 
     assert (generation.outcome, generation.draft) == ("failed", None)
+    assert generation.usage.output_tokens == 34
 
 
 def test_an_api_error_counts_as_failed() -> None:
@@ -109,7 +126,7 @@ def judge(messages: Messages, **options: Any) -> Judging:  # noqa: ANN401
 
 
 def test_the_judge_returns_the_judgement_with_its_usage() -> None:
-    messages = Messages(response("end_turn", parsed_output=cast("Draft", JUDGEMENT)))
+    messages = Messages(response("end_turn", text=JUDGEMENT.model_dump_json()))
 
     judging = judge(messages)
 
@@ -121,8 +138,10 @@ def test_the_judge_returns_the_judgement_with_its_usage() -> None:
         "max_tokens": 4096,
         "system": [{"type": "text", "text": "The rubric.", "cache_control": {"type": "ephemeral"}}],
         "messages": [{"role": "user", "content": "The exchange."}],
-        "output_format": Judgement,
-        "output_config": {"effort": "low"},
+        "output_config": {
+            "effort": "low",
+            "format": {"type": "json_schema", "schema": anthropic.transform_schema(Judgement)},
+        },
     }
 
 

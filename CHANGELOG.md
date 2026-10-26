@@ -7,6 +7,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A reply that the output limit cuts short in the middle of its JSON is rejected as
+  truncated, with its cost counted, instead of failing the request: the service answered
+  with an error rather than the fallback, and `citedesk exam` stopped with a
+  `ValidationError`.
+
 ## [0.1.0] - 2026-10-12
 
 ### Added
