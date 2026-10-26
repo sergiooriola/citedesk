@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import anthropic
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from citedesk.exam.judge import Judgement, Judging
 from citedesk.model import Draft, Generation, Usage
@@ -36,19 +36,23 @@ class _Claude:
         """Send one request and return how it ended, the parsed output and the usage.
 
         The instructions are marked for caching: they are the same for every request of a
-        deployment, and a cached read costs a fraction of a fresh one.
+        deployment, and a cached read costs a fraction of a fresh one. The output is parsed
+        here rather than by the SDK's `messages.parse`, which raises on the half-written JSON
+        of a response cut short before it can say that the response was cut short.
         """
         system: list[TextBlockParam] = [
             {"type": "text", "text": instructions, "cache_control": {"type": "ephemeral"}}
         ]
         try:
-            response = await self.client.messages.parse(
+            response = await self.client.messages.create(
                 model=self.model,
                 max_tokens=self.max_output_tokens,
                 system=system,
                 messages=messages,
-                output_format=shape,
-                output_config={"effort": self.effort},
+                output_config={
+                    "effort": self.effort,
+                    "format": {"type": "json_schema", "schema": anthropic.transform_schema(shape)},
+                },
             )
         except anthropic.APIError:
             # Rate limits, spend limits, outages and bad requests all end the same way for
@@ -64,9 +68,13 @@ class _Claude:
         outcome = _OUTCOMES.get(response.stop_reason or "", "completed")
         if outcome != "completed":
             return outcome, None, usage
-        if response.parsed_output is None:
+        text = next((block.text for block in response.content if block.type == "text"), None)
+        if text is None:
             return "failed", None, usage
-        return "completed", response.parsed_output, usage
+        try:
+            return "completed", shape.model_validate_json(text), usage
+        except ValidationError:
+            return "failed", None, usage
 
 
 class AnthropicModel:
