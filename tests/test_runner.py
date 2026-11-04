@@ -103,7 +103,69 @@ def test_a_reply_with_forbidden_or_invented_content_fails_the_exam(deployment: D
     assert report.runs[0].failures == ("forbidden_text", "unsupported_claim", "answered")
     assert (report.runs[0].critical, report.runs[0].readings) == (True, 2)
     assert (report.passed, report.critical, report.verdict) == (0, 3, "failed")
+    assert (report.blocking, report.one_off) == (("FEES",), ())
     assert report.failures == {"forbidden_text": 3, "unsupported_claim": 3, "answered": 3}
+
+
+def test_an_unsupported_claim_in_one_run_of_a_case_is_listed_but_does_not_fail_the_exam() -> None:
+    runs = (
+        Run(HOURS, 1, REPLY, failures=("unsupported_claim",)),
+        Run(HOURS, 2, REPLY),
+        Run(HOURS, 3, REPLY),
+    )
+
+    report = Report(runs, pass_mark=0.5)
+
+    assert (report.critical, report.blocking, report.one_off) == (1, (), ("HOURS",))
+    assert report.verdict == "passed"
+
+
+def test_an_unsupported_claim_that_comes_back_in_the_same_case_fails_the_exam() -> None:
+    runs = (
+        Run(HOURS, 1, REPLY, failures=("unsupported_claim",)),
+        Run(HOURS, 2, REPLY),
+        Run(HOURS, 3, REPLY, failures=("unsupported_claim",)),
+        Run(FEES, 1, REPLY),
+        Run(FEES, 2, REPLY),
+        Run(FEES, 3, REPLY),
+    )
+
+    report = Report(runs, pass_mark=0.5)
+
+    assert (report.blocking, report.one_off) == (("HOURS",), ())
+    assert report.verdict == "failed"
+
+
+def test_one_off_claims_in_different_cases_do_not_add_up() -> None:
+    runs = (
+        Run(HOURS, 1, REPLY, failures=("unsupported_claim",)),
+        Run(HOURS, 2, REPLY),
+        Run(FEES, 1, REPLY),
+        Run(FEES, 2, REPLY, failures=("unsupported_claim",)),
+    )
+
+    report = Report(runs, pass_mark=0.5)
+
+    assert (report.blocking, report.one_off) == ((), ("HOURS", "FEES"))
+    assert report.verdict == "passed"
+
+
+def test_forbidden_text_fails_the_exam_in_a_single_run() -> None:
+    runs = (
+        Run(FEES, 1, REPLY, failures=("forbidden_text",)),
+        Run(FEES, 2, REPLY),
+        Run(FEES, 3, REPLY),
+    )
+
+    report = Report(runs, pass_mark=0.5)
+
+    assert (report.blocking, report.verdict) == (("FEES",), "failed")
+
+
+def test_a_case_put_once_fails_the_exam_on_its_only_unsupported_claim() -> None:
+    report = Report((Run(HOURS, 1, REPLY, failures=("unsupported_claim",)),), pass_mark=0.0)
+
+    assert (report.blocking, report.verdict) == (("HOURS",), "failed")
 
 
 def test_an_unsupported_claim_has_to_be_found_twice(deployment: Deployment) -> None:
@@ -170,7 +232,7 @@ def test_ungraded_runs_make_a_passing_exam_incomplete_but_do_not_excuse_a_failin
     passed = Run(HOURS, 1, REPLY)
     ungraded = Run(HOURS, 2, REPLY, ungraded="judge")
     failed = Run(HOURS, 3, REPLY, failures=("handed_off",))
-    critical = Run(HOURS, 4, REPLY, failures=("unsupported_claim",))
+    critical = Run(HOURS, 4, REPLY, failures=("forbidden_text",))
 
     assert Report((passed, ungraded), pass_mark=0.95).verdict == "incomplete"
     assert Report((passed, ungraded, failed), pass_mark=0.95).verdict == "failed"
@@ -217,6 +279,8 @@ def test_the_report_lays_out_the_totals_and_every_run(deployment: Deployment) ->
         "graded": 3,
         "passed": 0,
         "critical": 3,
+        "blocking": ["FEES"],
+        "one_off": [],
         "failures": {"forbidden_text": 3, "unsupported_claim": 3, "answered": 3},
     }
     assert laid_out["usage"]["assistant"]["input_tokens"] == 30

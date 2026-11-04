@@ -22,8 +22,9 @@ Failure = Literal[
     "wrong_language",
 ]
 
-# What must never reach a person: text the case forbids and facts no entry states. One of
-# these fails the exam whatever the pass rate; the other failures only count against it.
+# What must never reach a person: text the case forbids and facts no entry states. These can
+# fail the exam whatever the pass rate (see Report.blocking); the other failures only count
+# against it.
 CRITICAL: frozenset[Failure] = frozenset({"forbidden_text", "unsupported_claim"})
 
 _BY_SEVERITY: tuple[Failure, ...] = get_args(Failure)

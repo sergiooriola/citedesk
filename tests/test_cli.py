@@ -109,6 +109,8 @@ def test_a_passed_exam_exits_with_zero_and_prints_the_totals(
         "runs      6, graded 6\n"
         "passed    6 (100.0%; the pass mark is 95%)\n"
         "critical  0\n"
+        "blocking  -\n"
+        "one-off   -\n"
         "failures  -\n"
         "tokens    assistant: 60 in, 30 out, 0 cache read, 0 cache write\n"
         "          judge: 42 in, 0 out, 0 cache read, 0 cache write\n"
@@ -156,6 +158,8 @@ def test_a_failed_exam_exits_with_one_and_shows_each_failed_run(
         "runs      2, graded 2",
         "passed    1 (50.0%; the pass mark is 95%)",
         "critical  1",
+        "blocking  ROUGH",
+        "one-off   -",
         "failures  unsupported_claim 1, answered 1",
         "tokens    assistant: 20 in, 10 out, 0 cache read, 0 cache write",
         "          judge: 21 in, 0 out, 0 cache read, 0 cache write",
