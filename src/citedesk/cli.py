@@ -249,6 +249,8 @@ def _summary(report: Report) -> str:
         f"passed    {report.passed} ({report.pass_rate:.1%}; the pass mark is "
         f"{report.pass_mark:.0%})",
         f"critical  {report.critical}",
+        f"blocking  {', '.join(report.blocking) or '-'}",
+        f"one-off   {', '.join(report.one_off) or '-'}",
         f"failures  {by_failure or '-'}",
         f"tokens    assistant: {_tokens(report.assistant_usage)}",
         f"          judge: {_tokens(report.judge_usage)}",

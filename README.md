@@ -107,7 +107,7 @@ not reply the same way twice. Each reply is graded in two steps:
    words: `85` is not found in a telephone number that contains 859.
 2. **By a judge.** A second, stronger model breaks the reply into its claims and names the
    entries that state each one. A claim no entry states is an invented fact. The judge also
-   says which language the reply is in. Since one invented fact fails the whole exam, the
+   says which language the reply is in. Since an invented fact can fail the whole exam, the
    judge has to find it on two separate readings.
 
 | Failure | Meaning | Critical |
@@ -121,11 +121,15 @@ not reply the same way twice. Each reply is graded in two steps:
 | `uncited_claim` | A claim is stated only by entries the reply did not cite | |
 | `wrong_language` | The reply is not in the language the case sets | |
 
-The exam is **passed** only with no critical failure in any run and at least 95 % of the
-runs free of failures; the command then exits with 0. It exits with 1 when the exam is
-failed and with 2 when a model call failed and some runs could not be graded, in which case
-the exam has to be repeated. `--report` writes every reply and every judgement to a JSON
-file.
+The exam is **passed** only when no case blocks it and at least 95 % of the runs are free of
+failures; the command then exits with 0. A case blocks it with forbidden text in any of its
+runs, or with an unsupported claim in at least two of them (in its only run, if it is put
+once): a fact the assistant invents comes back when the same question does, while a one-off
+rewording of an entry does not. The cases with an unsupported claim in a single run are listed
+apart as `one-off`, to be read: one that keeps coming back from exam to exam is a weakness too.
+The command exits with 1 when the exam is failed and with 2 when a model call failed and some
+runs could not be graded, in which case the exam has to be repeated. `--report` writes every
+reply and every judgement to a JSON file.
 
 ### Measuring the judge
 

@@ -7,6 +7,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- An unsupported claim fails the exam only when it comes back in at least two runs of the
+  same case, or in the only run of a case put once; forbidden text still fails it in a
+  single run. Failing on any one unsupported claim failed most exams of a sound assistant,
+  on rewordings of its entries that did not repeat. The report and the summary
+  list the cases that failed the exam (`blocking`) and the one-off claims to read
+  (`one_off`).
+
 ### Fixed
 
 - A reply that the output limit cuts short in the middle of its JSON is rejected as
