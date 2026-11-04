@@ -29,8 +29,7 @@ _READINGS = 2
 
 # How many runs of one case have to contain an unsupported claim before it fails the exam. A
 # fact the assistant invents comes back when the same question does; a one-off rewording of an
-# entry does not, and failing a whole exam on one made a good assistant pass about one time in
-# three.
+# entry does not, and failing a whole exam on one failed most exams of a sound assistant.
 _REPEATS = 2
 
 
